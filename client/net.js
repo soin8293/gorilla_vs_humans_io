@@ -1,7 +1,7 @@
 // net.js (ES module)
-import { Client } from "https://cdn.jsdelivr.net/npm/colyseus.js@0.15.16/dist/colyseus.mjs";
+// Colyseus Client is now exposed globally by index.html
 
-const client = new Client("wss://gorilla-vs-humans-io.onrender.com");
+const client = new window.ColyseusClient("wss://gorilla-vs-humans-io.onrender.com");
 window.colyseusRoom = null; // Expose room globally for game.js to send inputs
 
 // gameState will be populated by server updates and consumed by game.js

@@ -18,8 +18,12 @@
         <input type="text" id="chatInput" placeholder="Type message..." />
     </div>
     <!-- Colyseus ESM bundle (works in browsers) -->
-    <!-- Colyseus will be imported directly in net.js -->
-    <!-- net.js and game.js are already modules -->
+    <!-- Colyseus ESM bundle (works in browsers) -->
+    <script type="module">
+      import { Client } from "https://unpkg.com/colyseus.js@0.15.22/dist/colyseus.esm.js";
+      window.ColyseusClient = Client;              // expose globally
+    </script>
+    <!-- your modules must have type="module" -->
     <script type="module" src="net.js"></script>
     <script type="module" src="game.js"></script>
 </body>
