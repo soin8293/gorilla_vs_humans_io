@@ -728,7 +728,7 @@ class MatchRoom extends colyseus.Room {
         const gorillaPlayer = this.state.gorillaPlayerId ? this.state.players.get(this.state.gorillaPlayerId) : null;
         const activeBots = Array.from(this.state.players.values()).filter(p => p.isBot && p.state === 'playing');
         if (gorillaPlayer && gorillaPlayer.state === 'playing') {
-            this.aiBotSystem.updateBots(activeBots, gorillaPlayer, this.clock.currentTime);
+            this.aiBotSystem.updateBots(activeBots, gorillaPlayer, this.state.mapObstacles, this.clock.currentTime);
         }
 
 

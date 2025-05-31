@@ -1,4 +1,4 @@
-import { gameState, sendInput as sendNetInput, sendChatMessage as sendNetChatMessage } from './net.js';
+import { gameState, sendInput as sendNetInput, sendChatMessage as sendNetChatMessage, dequeueEvents } from './net.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -19,6 +19,74 @@ const sounds = {
     gorillaAssigned: new Audio() // TODO: Add actual sound file path
 };
 // Example: sounds.hit.src = 'sounds/hit.wav';
+
+// --- Simple Animation System ---
+let animations = []; // Stores { type, targetId, endTime, x, y, text, color, radius }
+
+function startFlash(playerId, duration = 200, color = 'rgba(255, 0, 0, 0.5)') {
+    animations.push({ type: 'flash', targetId: playerId, endTime: Date.now() + duration, color });
+}
+
+function startSkullPop(playerId, duration = 500) {
+    const player = gameState.players.get(playerId);
+    if (player) {
+        animations.push({ type: 'skull', x: player.x, y: player.y, endTime: Date.now() + duration, radius: 10 });
+    }
+}
+
+function startFadeIn(playerId, duration = 500) {
+    animations.push({ type: 'fadeIn', targetId: playerId, startTime: Date.now(), duration });
+}
+
+function showBanner(text, duration = 3000) {
+    // This will be handled by updating phaseElement directly for simplicity,
+    // but could be an animation if more complex visuals are needed.
+    phaseElement.textContent = text;
+    phaseElement.style.display = 'block';
+    setTimeout(() => {
+        if (phaseElement.textContent === text) { // Only hide if it's still the same message
+             // Check gamePhase before hiding, results banner should persist longer or be handled by gamePhase change
+            if (gameState.gamePhase !== 'results' && gameState.gamePhase !== 'countdown' && gameState.gamePhase !== 'lobby') {
+                phaseElement.style.display = 'none';
+            }
+        }
+    }, duration);
+}
+
+function drawAnimations() {
+    const now = Date.now();
+    animations = animations.filter(anim => now < anim.endTime || (anim.type === 'fadeIn' && now < anim.startTime + anim.duration));
+
+    ctx.save();
+    // Animations are drawn in world space if they have targetId or x/y
+    // Or screen space if they are UI elements (though banner is HTML)
+    
+    animations.forEach(anim => {
+        const player = anim.targetId ? gameState.players.get(anim.targetId) : null;
+        
+        if (anim.type === 'flash' && player) {
+            ctx.beginPath();
+            const radius = player.role === 'gorilla' ? 20 : 10;
+            ctx.arc(player.x, player.y, radius + 2, 0, Math.PI * 2); // Slightly larger flash
+            ctx.fillStyle = anim.color;
+            ctx.fill();
+        } else if (anim.type === 'skull' && anim.x !== undefined) {
+            ctx.font = `${anim.radius * 2}px Arial`;
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.fillText('💀', anim.x, anim.y); // Simple skull emoji
+        } else if (anim.type === 'fadeIn' && player) {
+            const elapsed = now - anim.startTime;
+            const alpha = Math.min(1, elapsed / anim.duration);
+            // The actual drawing of the player will handle its normal appearance.
+            // This animation entry is more of a flag or could modify player's draw alpha if needed.
+            // For now, just having it in the queue is enough for the `fadeIn` call.
+            // If player drawing logic checks for an active 'fadeIn' animation, it can adjust alpha.
+        }
+    });
+    ctx.restore();
+}
+
 
 function playSound(soundName) {
     if (sounds[soundName] && sounds[soundName].src) {
@@ -61,6 +129,7 @@ function updateCamera() {
 
 
 // --- Input Handling ---
+let controlsFrozen = false;
 const movement = { up: false, down: false, left: false, right: false };
 const keys = {
     ArrowUp: 'up', w: 'up', W: 'up',
@@ -70,7 +139,21 @@ const keys = {
 };
 
 window.addEventListener('keydown', (e) => {
-    if (document.activeElement === chatInputElement) return; // Don't move if typing in chat
+    if (controlsFrozen && e.key !== 'Enter') return; // Allow Enter for chat even if frozen
+
+    if (document.activeElement === chatInputElement) {
+        if (e.key === 'Enter') {
+            if (controlsFrozen && gameState.gamePhase !== 'results') return; // Don't send chat if frozen unless it's results phase
+            const messageText = chatInputElement.value;
+            if (messageText.trim() !== "") {
+                sendNetChatMessage(messageText);
+                chatInputElement.value = "";
+            }
+            // chatInputElement.blur(); // Keep focus for now
+        }
+        return;
+    }
+
     if (keys[e.key]) {
         movement[keys[e.key]] = true;
         sendMovementInput();
@@ -78,13 +161,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
+    // We don't need to check controlsFrozen here for keyup if keydown is blocked
     if (document.activeElement === chatInputElement && e.key === 'Enter') {
-        const messageText = chatInputElement.value;
-        if (messageText.trim() !== "") {
-            sendNetChatMessage(messageText);
-            chatInputElement.value = "";
-        }
-        chatInputElement.blur(); // Unfocus after sending
+        // Already handled by keydown for chat
         return;
     }
     if (keys[e.key]) {
@@ -94,7 +173,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 function sendMovementInput() {
-    if (!gameState.localPlayerId) return;
+    if (controlsFrozen || !gameState.localPlayerId) return;
     let dx = 0;
     let dy = 0;
     if (movement.up) dy -= 1;
@@ -141,26 +220,57 @@ function drawObstacles() {
 }
 
 function drawPlayer(player) {
-    if (!player) return;
+    if (!player || player.state === 'spectating') return; // Don't draw if spectating
+
+    let alpha = 1;
+    // Check for fade-in animation
+    const fadeInAnim = animations.find(a => a.type === 'fadeIn' && a.targetId === player.id);
+    if (fadeInAnim) {
+        const elapsed = Date.now() - fadeInAnim.startTime;
+        alpha = Math.min(1, elapsed / fadeInAnim.duration);
+    }
+    
+    if (player.hp <= 0 && player.state === 'dead') { // Only apply dead tint if actually dead
+        alpha = Math.min(alpha, 0.5); // Make dead players more transparent
+    }
+
+    ctx.globalAlpha = alpha;
 
     const isLocal = player.id === gameState.localPlayerId;
-    const radius = player.role === 'gorilla' ? 20 : 10; // Gorilla larger
+    let radius = player.role === 'gorilla' ? 20 : 10;
+    
+    // Check for gorilla_assigned effect for local player
+    if (player.id === gameState.localPlayerId && player.role === 'gorilla') {
+        // Could add a temporary size increase animation here if desired,
+        // but permanent size change is handled by `radius` variable.
+    }
+
+
     const color = player.role === 'gorilla' ? 'darkred' : (isLocal ? 'deepskyblue' : 'lightgreen');
 
     ctx.beginPath();
     ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-
-    if (player.hp <= 0) { // Dead-state tint
-        ctx.fillStyle = 'rgba(100, 100, 100, 0.7)'; // Semi-transparent grey
+    
+    // Check for flash animation
+    const flashAnim = animations.find(a => a.type === 'flash' && a.targetId === player.id);
+    if (flashAnim) {
+        ctx.fillStyle = flashAnim.color;
+    } else {
+        ctx.fillStyle = color;
+    }
+    
+    if (player.hp <= 0 && player.state === 'dead') { // Dead-state tint, if not flashing
+        if (!flashAnim) ctx.fillStyle = 'rgba(100, 100, 100, 0.7)';
     }
     ctx.fill();
+
     if (isLocal || player.role === 'gorilla') { // Outline local player and gorilla for visibility
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2;
         ctx.stroke();
     }
     ctx.closePath();
+    ctx.globalAlpha = 1; // Reset alpha
 
     // Nickname
     ctx.fillStyle = 'white';
@@ -210,6 +320,12 @@ function drawHUD() {
 
     // Phase Banner & Countdown/Timer
     let phaseText = "";
+    // Reset controls if game is restarting
+    if ((gameState.gamePhase === "lobby" || gameState.gamePhase === "countdown") && controlsFrozen) {
+        controlsFrozen = false;
+        console.log("Controls Unfrozen - New Round Cycle");
+    }
+
     switch (gameState.gamePhase) {
         case "lobby":
             phaseText = `LOBBY (Waiting for players...)`;
@@ -278,50 +394,69 @@ window.addChatMessage = function(senderNickname, messageText, isSystem = false) 
 };
 
 // --- Event Processing ---
-let processedEventIds = new Set(); // To avoid processing same event multiple times if state syncs fast
+// `processedEventIds` is now managed in net.js via `dequeueEvents`
 
 function processGameEvents() {
-    if (!gameState.events || gameState.events.length === 0) return;
+    const newEvents = dequeueEvents(); // Get only new, unprocessed events
 
-    gameState.events.forEach(event => {
-        if (processedEventIds.has(event.id)) return; // Assuming events have a unique ID from server
-
-        console.log("Processing event:", event);
+    for (const event of newEvents) {
+        console.log("Processing client event:", event);
         switch (event.type) {
             case 'hit':
-                // Visual: particle effect, screen shake?
                 playSound('hit');
-                addChatMessage(null, `${event.targetNickname} was hit by ${event.attackerNickname}!`, true);
+                if (event.targetId) { // targetId is from GameEvent schema
+                    startFlash(event.targetId);
+                     // Add chat message if desired, but problem description focuses on visual
+                    // addChatMessage(null, `${event.targetNickname} was hit by ${event.attackerNickname}!`, true);
+                }
                 break;
             case 'kill':
-                // Visual: death animation, fade out
                 playSound('kill');
-                addChatMessage(null, `${event.victimNickname} was killed by ${event.killerNickname}!`, true);
+                if (event.victimId) { // victimId from GameEvent schema
+                    startSkullPop(event.victimId);
+                    // Nicknames should be part of the event from server
+                    const victimName = event.victimNickname || event.victimId;
+                    const killerName = event.killerNickname || event.killerId;
+                    addChatMessage(null, `${killerName} eliminated ${victimName}.`, true);
+                }
                 break;
             case 'respawn':
                 playSound('respawn');
-                addChatMessage(null, `${event.nickname} respawned!`, true);
+                if (event.playerId) { // playerId from GameEvent schema
+                    fadeIn(event.playerId);
+                    const playerName = event.playerNickname || event.playerId;
+                    addChatMessage(null, `${playerName} respawned.`, true);
+                }
                 break;
             case 'game_over':
                 playSound('gameOver');
-                // Handled by phase banner mostly
+                // event.reason should contain "humans_win", "gorilla_wins", etc.
+                let winnerText = "GAME OVER";
+                if (event.reason) {
+                    if (event.reason.includes("humans_win")) winnerText = "HUMANS WIN!";
+                    else if (event.reason.includes("gorilla_wins")) winnerText = "GORILLA WINS!";
+                    else if (event.reason.includes("time_up")) winnerText = "TIME'S UP! HUMANS SURVIVED!";
+                    else winnerText = event.reason.toUpperCase();
+                }
+                showBanner(winnerText);
+                addChatMessage(null, `Game Over! ${winnerText}`, true);
+                controlsFrozen = true;
+                console.log("Controls Frozen - Game Over");
                 break;
             case 'gorilla_assigned':
                 playSound('gorillaAssigned');
-                const player = gameState.players.get(event.playerId);
-                if (player) {
-                    addChatMessage(null, `${player.nickname} is the GORILLA!`, true);
+                if (event.playerId) { // playerId from GameEvent schema
+                    const assignedPlayer = gameState.players.get(event.playerId);
+                    const playerName = event.playerNickname || (assignedPlayer ? assignedPlayer.nickname : event.playerId);
+                    addChatMessage(null, `${playerName} is the GORILLA!`, true);
+                    if (event.playerId === gameState.localPlayerId) {
+                        // Visual change for local player becoming gorilla is handled by drawPlayer checking role.
+                        // Could add a temporary visual effect here if desired.
+                        console.log("I am the gorilla!");
+                    }
                 }
                 break;
-            // Add more event types as needed
         }
-        processedEventIds.add(event.id); // Mark as processed
-    });
-
-    // Simple pruning of processedEventIds to prevent memory leak, server should handle actual event lifecycle
-    if (processedEventIds.size > 100) {
-        const oldEvents = Array.from(processedEventIds).slice(0, 50);
-        oldEvents.forEach(id => processedEventIds.delete(id));
     }
 }
 
@@ -343,6 +478,7 @@ function gameLoop(timestamp) {
     drawMapBackground();
     drawObstacles();
     gameState.players.forEach(drawPlayer);
+    drawAnimations(); // Draw active animations (like flash, skull pop)
 
     ctx.restore(); // Restore context to draw HUD elements in screen space
 
@@ -354,12 +490,13 @@ function gameLoop(timestamp) {
 // Initialize chat input listener (moved here from keyup for clarity)
 chatInputElement.addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
+        if (controlsFrozen && gameState.gamePhase !== 'results') return; // Don't send chat if frozen, unless it's results phase to allow GG
         const messageText = chatInputElement.value;
         if (messageText.trim() !== "") {
             sendNetChatMessage(messageText);
             chatInputElement.value = "";
         }
-        // chatInputElement.blur(); // Optional: unfocus after sending
+        // chatInputElement.blur(); // Optional: unfocus after sending, current keydown handles focus
     }
 });
 

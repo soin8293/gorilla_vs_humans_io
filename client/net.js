@@ -1,4 +1,4 @@
-const client = new Colyseus.Client(window.location.origin.replace(/^http/, 'ws')); // Use window.location for flexible deployment
+const client = new Colyseus.Client("wss://orange-leaf-1234.ngrok.io"); // Use window.location for flexible deployment
 window.colyseusRoom = null; // Expose room globally for game.js to send inputs
 
 // gameState will be populated by server updates and consumed by game.js
@@ -10,9 +10,36 @@ export const gameState = {
     roundTime: 0,
     totalHumanLives: 0,
     localPlayerId: null,
-    events: [], // Queue for transient events like 'hit', 'kill'
+    events: [], // This will be an array of event objects from the server {id, ts, type, ...data}
     mapDimensions: { width: 800, height: 600 } // Default, should be updated by server
 };
+
+const processedEventIds = new Set();
+
+export function dequeueEvents() {
+    const newEvents = [];
+    // gameState.events is directly from server state, which is an ArraySchema.
+    // We need to iterate it carefully.
+    if (gameState.events && gameState.events.forEach) {
+        gameState.events.forEach(event => {
+            if (event && event.id && !processedEventIds.has(event.id)) {
+                processedEventIds.add(event.id);
+                newEvents.push(event); // Push the actual event object
+            }
+        });
+    }
+    // The server prunes events after 3s. Client-side `processedEventIds` ensures
+    // each event is acted upon once, even if it's received in multiple state updates
+    // before server pruning. We don't need to prune `processedEventIds` aggressively
+    // unless memory becomes an issue, as event IDs are unique and old ones won't reappear.
+    // For very long sessions, some pruning of `processedEventIds` might be good.
+    if (processedEventIds.size > 200) { // Example pruning condition
+        // Convert set to array, take the first N, and delete them
+        const idsToDelete = Array.from(processedEventIds).slice(0, 100);
+        idsToDelete.forEach(id => processedEventIds.delete(id));
+    }
+    return newEvents;
+}
 
 // Function to get/set nickname from localStorage
 function getPlayerNickname() {
@@ -69,7 +96,10 @@ async function connect() {
             
             // Server now handles event pruning. Client just consumes.
             if (state.events) {
-                gameState.events = Array.from(state.events); // Assuming events is an ArraySchema of objects
+                // gameState.events should directly reference or be a copy of state.events
+                // The server sends GameEvent objects. Colyseus ArraySchema handles the sync.
+                // We just need to make sure gameState.events is the up-to-date array.
+                gameState.events = state.events;
             }
         });
         
