@@ -3,10 +3,16 @@ const { Schema, MapSchema, ArraySchema, type, defineTypes } = require('@colyseus
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Helper to generate unique IDs for events
+function generateUniqueId() {
+    return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+}
+
 // Import systems
 const CombatSystem = require('../systems/combat');
 const StaminaSystem = require('../systems/stamina');
 const AIBotSystem = require('../systems/aiBot');
+const { circleRectCollision } = require('../utils/collision');
 
 // --- Game Constants ---
 const MAX_PLAYERS = 11; // 1 Gorilla, 10 Humans
@@ -93,6 +99,61 @@ defineTypes(ChatMessage, {
     timestamp: "number",
 });
 
+// --- Game Event State ---
+class GameEvent extends Schema {
+    constructor() {
+        super();
+        this.id = generateUniqueId();
+        this.ts = 0;
+        this.type = ""; // "hit", "kill", "respawn", "game_over", "gorilla_assigned"
+        
+        // Common fields for simple messages or context
+        this.message = "";
+
+        // Fields for 'hit'
+        this.attackerId = "";
+        this.attackerNickname = "";
+        this.targetId = "";
+        this.targetNickname = "";
+        this.damage = 0;
+
+        // Fields for 'kill'
+        this.victimId = "";
+        this.victimNickname = "";
+        this.killerId = "";
+        this.killerNickname = "";
+
+        // Fields for 'respawn' & 'gorilla_assigned'
+        this.playerId = "";
+        this.playerNickname = "";
+
+        // Fields for 'game_over'
+        this.reason = "";
+    }
+}
+defineTypes(GameEvent, {
+    id: "string",
+    ts: "number",
+    type: "string",
+    message: "string",
+
+    attackerId: "string",
+    attackerNickname: "string",
+    targetId: "string",
+    targetNickname: "string",
+    damage: "number",
+
+    victimId: "string",
+    victimNickname: "string",
+    killerId: "string",
+    killerNickname: "string",
+
+    playerId: "string",
+    playerNickname: "string",
+
+    reason: "string"
+});
+
 // --- Game State ---
 class GameState extends Schema {
     constructor() {
@@ -102,11 +163,13 @@ class GameState extends Schema {
         this.countdown = COUNTDOWN_SECONDS;
         this.players = new MapSchema();
         this.gorillaQueue = new ArraySchema(); // Stores client.sessionId
-        this.events = new ArraySchema(); // For broadcasting hit, kill, etc. [type, ...args]
+        this.events = new ArraySchema(); // Array of GameEvent objects
         this.mapObstacles = new ArraySchema();
         this.chatMessages = new ArraySchema();
         this.gorillaPlayerId = null; // ID of the current gorilla
         this.totalHumanLives = 0;
+        this.mapWidth = MAP_WIDTH; // Expose map dimensions
+        this.mapHeight = MAP_HEIGHT; // Expose map dimensions
     }
 }
 defineTypes(GameState, {
@@ -115,11 +178,13 @@ defineTypes(GameState, {
     countdown: "number",
     players: { map: Player },
     gorillaQueue: ["string"],
-    events: [["string"]], // Array of Array of strings
+    events: [GameEvent], // Changed from [["string"]]
     mapObstacles: [Obstacle],
     chatMessages: [ChatMessage],
     gorillaPlayerId: "string",
     totalHumanLives: "number",
+    mapWidth: "number",
+    mapHeight: "number"
 });
 
 class MatchRoom extends colyseus.Room {
@@ -202,41 +267,119 @@ class MatchRoom extends colyseus.Room {
                 let newY = player.y + normalizedDy * moveDistance;
 
                 // Basic boundary collision
-                newX = Math.max(player.bodyRadius, Math.min(MAP_WIDTH - player.bodyRadius, newX));
-                newY = Math.max(player.bodyRadius, Math.min(MAP_HEIGHT - player.bodyRadius, newY));
+                let proposedX = Math.max(player.bodyRadius, Math.min(MAP_WIDTH - player.bodyRadius, newX));
+                let proposedY = Math.max(player.bodyRadius, Math.min(MAP_HEIGHT - player.bodyRadius, newY));
 
-                // Basic obstacle collision (AABB for player, AABB for obstacle)
+                // Obstacle collision using circleRectCollision
+                let collisionX = false;
+                let collisionY = false;
+
                 for (const obs of this.state.mapObstacles) {
-                    // Check X-axis collision
-                    if (newX - player.bodyRadius < obs.x + obs.width &&
-                        newX + player.bodyRadius > obs.x &&
-                        player.y - player.bodyRadius < obs.y + obs.height &&
-                        player.y + player.bodyRadius > obs.y) {
-                        // Collision on X, try to adjust
-                        if (normalizedDx > 0) newX = obs.x - player.bodyRadius - 0.01; // Moving right
-                        else if (normalizedDx < 0) newX = obs.x + obs.width + player.bodyRadius + 0.01; // Moving left
-                    }
-                     // Check Y-axis collision (with potentially adjusted newX)
-                    if (newX - player.bodyRadius < obs.x + obs.width &&
-                        newX + player.bodyRadius > obs.x &&
-                        newY - player.bodyRadius < obs.y + obs.height &&
-                        newY + player.bodyRadius > obs.y) {
-                         // Collision on Y
-                        if (normalizedDy > 0) newY = obs.y - player.bodyRadius - 0.01; // Moving down
-                        else if (normalizedDy < 0) newY = obs.y + obs.height + player.bodyRadius + 0.01; // Moving up
+                    // Check collision with proposed X, current Y
+                    if (circleRectCollision(proposedX, player.y, player.bodyRadius, obs.x, obs.y, obs.width, obs.height)) {
+                        collisionX = true;
+                        // Adjust X: place player next to obstacle
+                        if (normalizedDx > 0) proposedX = obs.x - player.bodyRadius - 0.01; // Moving right, place left of obs
+                        else if (normalizedDx < 0) proposedX = obs.x + obs.width + player.bodyRadius + 0.01; // Moving left, place right of obs
+                        else proposedX = player.x; // No horizontal movement, revert to current x
+                        break;
                     }
                 }
-                player.x = Math.max(player.bodyRadius, Math.min(MAP_WIDTH - player.bodyRadius, newX));
-                player.y = Math.max(player.bodyRadius, Math.min(MAP_HEIGHT - player.bodyRadius, newY));
+                // Boundary check for X after potential adjustment
+                proposedX = Math.max(player.bodyRadius, Math.min(MAP_WIDTH - player.bodyRadius, proposedX));
+
+
+                for (const obs of this.state.mapObstacles) {
+                    // Check collision with (now potentially adjusted) proposed X, and proposed Y
+                    if (circleRectCollision(proposedX, proposedY, player.bodyRadius, obs.x, obs.y, obs.width, obs.height)) {
+                        collisionY = true;
+                        // Adjust Y: place player next to obstacle
+                        if (normalizedDy > 0) proposedY = obs.y - player.bodyRadius - 0.01; // Moving down, place above obs
+                        else if (normalizedDy < 0) proposedY = obs.y + obs.height + player.bodyRadius + 0.01; // Moving up, place below obs
+                        else proposedY = player.y; // No vertical movement, revert to current y
+                        break;
+                    }
+                }
+                // Boundary check for Y after potential adjustment
+                proposedY = Math.max(player.bodyRadius, Math.min(MAP_HEIGHT - player.bodyRadius, proposedY));
+                
+                // Final check: if after adjustments, still colliding (e.g. corner case), try to only allow movement on one axis if the other was blocked.
+                // This is a simple slide. More complex resolution might be needed for perfect cornering.
+                let finalX = proposedX;
+                let finalY = proposedY;
+
+                if (collisionX && collisionY) { // If collided on both axes attempts
+                    // Try moving only on Y axis from original position
+                    let tempY = player.y + normalizedDy * moveDistance;
+                    tempY = Math.max(player.bodyRadius, Math.min(MAP_HEIGHT - player.bodyRadius, tempY));
+                    let stillCollidesYOnly = false;
+                    for (const obs of this.state.mapObstacles) {
+                        if (circleRectCollision(player.x, tempY, player.bodyRadius, obs.x, obs.y, obs.width, obs.height)) {
+                            stillCollidesYOnly = true;
+                            break;
+                        }
+                    }
+                    if (!stillCollidesYOnly) {
+                        finalX = player.x; // Keep original X
+                        finalY = tempY;
+                    } else {
+                        // Try moving only on X axis from original position
+                        let tempX = player.x + normalizedDx * moveDistance;
+                        tempX = Math.max(player.bodyRadius, Math.min(MAP_WIDTH - player.bodyRadius, tempX));
+                        let stillCollidesXOnly = false;
+                        for (const obs of this.state.mapObstacles) {
+                             if (circleRectCollision(tempX, player.y, player.bodyRadius, obs.x, obs.y, obs.width, obs.height)) {
+                                stillCollidesXOnly = true;
+                                break;
+                            }
+                        }
+                        if (!stillCollidesXOnly) {
+                            finalX = tempX;
+                            finalY = player.y; // Keep original Y
+                        } else {
+                            // Stuck, don't move
+                            finalX = player.x;
+                            finalY = player.y;
+                        }
+                    }
+                }
+
+                player.x = finalX;
+                player.y = finalY;
             }
         } else if (action.t === 'a') { // Attack input: { t:"a" }
             if (now - player.lastAttackTime >= player.punchCooldownMs) {
                 if (this.staminaSystem.consumeStamina(player)) {
                     player.lastAttackTime = now;
                     const allPlayersArray = Array.from(this.state.players.values());
-                    const combatEvents = this.combatSystem.handleAttackAction(player, allPlayersArray);
-                    if (combatEvents && combatEvents.length > 0) {
-                        combatEvents.forEach(event => this.state.events.push(new ArraySchema(...event)));
+                    const combatEventsData = this.combatSystem.handleAttackAction(player, allPlayersArray);
+                    if (combatEventsData && combatEventsData.length > 0) {
+                        combatEventsData.forEach(eventData => {
+                            const gameEvent = new GameEvent();
+                            gameEvent.ts = now; // Use current time from this tick
+                            gameEvent.type = eventData[0];
+
+                            switch(eventData[0]) {
+                                case 'hit':
+                                    gameEvent.attackerId = eventData[1];
+                                    gameEvent.targetId = eventData[2];
+                                    gameEvent.damage = eventData[3];
+                                    gameEvent.targetNickname = eventData[4];
+                                    gameEvent.attackerNickname = eventData[5];
+                                    break;
+                                case 'kill':
+                                    gameEvent.killerId = eventData[1];
+                                    gameEvent.victimId = eventData[2];
+                                    gameEvent.victimNickname = eventData[3];
+                                    gameEvent.killerNickname = eventData[4];
+                                    break;
+                                case 'respawn':
+                                    gameEvent.playerId = eventData[1];
+                                    gameEvent.playerNickname = eventData[2];
+                                    break;
+                            }
+                            this.state.events.push(gameEvent);
+                        });
                     }
                 } else {
                     // console.log(`Player ${player.id} out of stamina for attack.`);
@@ -285,8 +428,14 @@ class MatchRoom extends colyseus.Room {
                 this.setPlayerDefaults(gorillaPlayer);
                 this.state.gorillaPlayerId = newGorillaId;
                 console.log(`Assigned Gorilla role to ${gorillaPlayer.nickname} (${newGorillaId})`);
-                // Broadcast this change or rely on state sync
-                this.broadcast("gorilla_assigned", { playerId: newGorillaId, nickname: gorillaPlayer.nickname });
+                
+                const assignEvent = new GameEvent();
+                assignEvent.ts = this.clock.currentTime;
+                assignEvent.type = "gorilla_assigned";
+                assignEvent.playerId = newGorillaId;
+                assignEvent.playerNickname = gorillaPlayer.nickname;
+                this.state.events.push(assignEvent);
+                // this.broadcast("gorilla_assigned", { playerId: newGorillaId, nickname: gorillaPlayer.nickname }); // Replaced by state event
                 return true;
             }
         }
@@ -300,8 +449,8 @@ class MatchRoom extends colyseus.Room {
         
         if (this.state.gamePhase === "round") {
             // End round, humans win by default
-            this.state.events.push(new ArraySchema("game_over", "humans_win_gorilla_left"));
-            this.startResultsPhase("humans_win_gorilla_left");
+            // this.state.events.push(new ArraySchema("game_over", "humans_win_gorilla_left")); // Old event style
+            this.startResultsPhase("humans_win_gorilla_left"); // This will create the GameEvent
         } else if (this.state.gamePhase === "lobby" || this.state.gamePhase === "countdown") {
             // Try to assign a new gorilla from the queue
             this.tryAssignGorilla();
@@ -444,7 +593,22 @@ class MatchRoom extends colyseus.Room {
 
     update(deltaTime) { // deltaTime is in milliseconds
         const deltaSeconds = deltaTime / 1000;
-        this.state.events.clear(); // Clear events from previous tick
+        
+        // Prune old events
+        const now = this.clock.currentTime;
+        for (let i = this.state.events.length - 1; i >= 0; i--) {
+            const event = this.state.events[i];
+            // Ensure event.ts is a number before comparison
+            // And that event itself is not undefined
+            if (event && typeof event.ts === 'number') {
+                if (now - event.ts >= 3000) { // Keep events for 3 seconds
+                    this.state.events.splice(i, 1);
+                }
+            } else if (event === undefined || event === null) {
+                // Defensive: remove undefined/null entries if they somehow appear
+                this.state.events.splice(i, 1);
+            }
+        }
 
         switch (this.state.gamePhase) {
             case "lobby":

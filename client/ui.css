@@ -1,0 +1,79 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: sans-serif;
+    color: white;
+}
+
+canvas#game {
+    border: 1px solid #000;
+    background-color: #444; /* Placeholder for map background */
+}
+
+#hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none; /* Allow clicks to pass through to canvas */
+}
+
+#localPlayerStats, #globalHumanLives {
+    background-color: rgba(0,0,0,0.5);
+    padding: 5px 10px;
+    border-radius: 5px;
+}
+
+#phase {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2em;
+    font-weight: bold;
+    background-color: rgba(0,0,0,0.7);
+    padding: 15px 30px;
+    border-radius: 10px;
+    text-align: center;
+    pointer-events: none;
+}
+
+#chat {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    width: 300px;
+    background-color: rgba(0,0,0,0.5);
+    border-radius: 5px;
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+}
+
+#chatMessages {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 5px 0;
+    height: 100px; /* Limit height and make scrollable */
+    overflow-y: auto;
+    font-size: 0.9em;
+}
+
+#chatMessages li {
+    margin-bottom: 3px;
+}
+
+#chatInput {
+    border: 1px solid #555;
+    background-color: #222;
+    color: white;
+    padding: 5px;
+    border-radius: 3px;
+}

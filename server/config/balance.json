@@ -1,25 +1,50 @@
 {
   "gorilla": {
     "lives": 1,
+    "TODO_lives": "Usually 1 for boss-type character.",
     "health": 100,
+    "TODO_health": "Range: 80-150. Depends on human damage output and desired round length.",
     "crit_kill_pct": 0,
+    "TODO_crit_kill_pct": "Range: 0-10%. Gorilla crits are very powerful, use sparingly if at all.",
     "stamina": 30,
+    "TODO_stamina": "Range: 20-50. Governs frequency of special moves or sustained attacks.",
     "stamina_per_punch": 1,
+    "TODO_stamina_per_punch": "Range: 1-5. Higher values make punches more costly.",
     "regen_per_sec": 2,
+    "TODO_regen_per_sec": "Range: 1-5. How quickly stamina recovers.",
     "move_speed": 4,
+    "TODO_move_speed": "Range: 3-5. Should be comparable to humans, maybe slightly slower or faster depending on desired dynamic.",
     "punch_cooldown_ms": 600,
+    "TODO_punch_cooldown_ms": "Range: 400-1000ms. Affects attack rate.",
     "hit_range": 1.2,
-    "gorilla_nocrit_damage": 3
+    "TODO_hit_range": "Range: 1.0-2.0. Larger makes it easier to hit.",
+    "gorilla_nocrit_damage": 3,
+    "TODO_gorilla_nocrit_damage": "Range: 2-5. Damage per non-critical hit to humans.",
+    "body_radius": 3,
+    "TODO_body_radius": "Range: 2-4. Visual and collision size."
   },
   "human": {
     "lives": 10,
+    "TODO_lives": "Range: 5-15. Total lives for the human team (or per human if individual).",
     "health": 10,
+    "TODO_health": "Range: 5-20. HP per life.",
     "crit_kill_pct": 40,
+    "TODO_crit_kill_pct": "Range: 10-50%. Chance for a human to instantly kill gorilla on hit (if gorilla has crit vulnerability).",
     "stamina": 50,
+    "TODO_stamina": "Range: 30-70. For sprinting, dodging, or special actions.",
     "stamina_per_punch": 1,
+    "TODO_stamina_per_punch": "Range: 1-3. Cost for human attacks.",
     "regen_per_sec": 4,
+    "TODO_regen_per_sec": "Range: 2-6. Stamina recovery rate.",
     "move_speed": 5,
+    "TODO_move_speed": "Range: 4-6. Human movement speed.",
     "punch_cooldown_ms": 400,
-    "hit_range": 0.9
+    "TODO_punch_cooldown_ms": "Range: 300-700ms. Human attack rate.",
+    "hit_range": 0.9,
+    "TODO_hit_range": "Range: 0.7-1.5. Human attack reach.",
+    "damage_to_gorilla": 1,
+    "TODO_damage_to_gorilla": "Range: 1-3. Damage per human hit on gorilla.",
+    "body_radius": 1,
+    "TODO_body_radius": "Range: 0.8-1.5. Visual and collision size."
   }
 }

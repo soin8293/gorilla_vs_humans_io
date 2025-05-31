@@ -4,13 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gorilla vs Humans IO</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { border: 1px solid #000; }
-    </style>
+    <link rel="stylesheet" href="ui.css">
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="game"></canvas>
+    <div id="hud">
+        <div id="localPlayerStats"></div>
+        <div id="globalHumanLives"></div>
+    </div>
+    <div id="phase"></div>
+    <div id="chat">
+        <ul id="chatMessages"></ul>
+        <input type="text" id="chatInput" placeholder="Type message..." />
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/colyseus.js@^0.15.0/dist/colyseus.js"></script>
     <script src="net.js"></script>
     <script src="game.js"></script>

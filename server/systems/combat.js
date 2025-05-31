@@ -1,4 +1,5 @@
 // server/systems/combat.js
+const { circleRectCollision } = require('../utils/collision'); // Import the new collision utility
 
 const DEAD_STATE = 'dead'; // Consider moving to a shared constants file or managing via Room
 
@@ -47,19 +48,41 @@ class CombatSystem {
                 console.error("Invalid position or radius data for hit detection:", { attacker, target });
                 continue;
             }
-            
+
+            // For hit detection, the "attacker" is a circle (their punch range)
+            // and the "target" is a circle (their body).
+            // We are checking if the attacker's punch circle overlaps the target's body circle.
+            // The combat system doesn't directly interact with rectangular obstacles for hit detection,
+            // but the circleRectCollision could be used if attacks could hit obstacles or had rectangular hitboxes.
+            // Here, it's circle-circle collision.
+
             const dx = attackerPosition.x - targetPosition.x;
             const dy = attackerPosition.y - targetPosition.y;
             const distanceSq = dx * dx + dy * dy;
             
             // Collision if distance between centers is less than sum of punch radius and target body radius
-            const collisionDistance = attackerPunchRadius + targetBodyRadius;
+            const combinedRadius = attackerPunchRadius + targetBodyRadius;
 
-            if (distanceSq < collisionDistance * collisionDistance) {
+            if (distanceSq < combinedRadius * combinedRadius) {
                 // Hit detected!
-                const damageEvents = this._applyDamageAndEffects(attacker, target);
-                if (damageEvents && damageEvents.length > 0) {
-                    events.push(...damageEvents);
+                // The _applyDamageAndEffects method expects event data in a specific array format.
+                // We need to ensure the returned events are structured correctly for MatchRoom.js GameEvent schema.
+                const damageOutcomeEvents = this._applyDamageAndEffects(attacker, target);
+                if (damageOutcomeEvents && damageOutcomeEvents.length > 0) {
+                    // Convert to the [type, ...args] format expected by MatchRoom's old event style,
+                    // which then gets converted to GameEvent objects.
+                    // OR, directly return objects that MatchRoom can easily map to GameEvent.
+                    // Let's adapt to return data that MatchRoom's current GameEvent creation logic can use.
+                    damageOutcomeEvents.forEach(eventArray => {
+                        // eventArray is like ['hit', attacker.id, victim.id, damageDealt, isCrit, victim.nickname, attacker.nickname]
+                        // or ['kill', killer.id, victim.id, reason, victim.nickname, killer.nickname]
+                        // or ['respawn', victim.id, livesRemaining, victim.nickname]
+                        
+                        // The MatchRoom's handlePlayerInput already expects this array format from combatSystem.
+                        // So, no change needed here for the structure of `damageOutcomeEvents`.
+                        // The change is that MatchRoom will now create structured GameEvent objects from these arrays.
+                        events.push(eventArray);
+                    });
                 }
             }
         }
@@ -87,11 +110,14 @@ class CombatSystem {
                 victim.lives = 0;
                 victim.hp = 0;
                 victim.state = DEAD_STATE;
-                eventLog.push(['hit', attacker.id, victim.id, damageDealt, true]); // [hitter, victim, dmg, isCrit]
-                eventLog.push(['kill', attacker.id, victim.id, 'gorilla_crit']); // [killer, victim, reason]
+                // eventLog.push(['hit', attacker.id, victim.id, damageDealt, true]); // Old format
+                eventLog.push(['hit', attacker.id, victim.id, damageDealt, true, victim.nickname, attacker.nickname]);
+                // eventLog.push(['kill', attacker.id, victim.id, 'gorilla_crit']); // Old format
+                eventLog.push(['kill', attacker.id, victim.id, 'gorilla_crit', victim.nickname, attacker.nickname]);
             } else {
                 victim.hp -= nonCritDamage;
-                eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false]);
+                // eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false]); // Old format
+                eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false, victim.nickname, attacker.nickname]);
 
                 if (victim.hp <= 0) {
                     victim.lives--;
@@ -100,12 +126,14 @@ class CombatSystem {
                         if (this.respawnPlayer) {
                             this.respawnPlayer(victim); // External function to handle respawn logic
                         }
-                        eventLog.push(['respawn', victim.id, victim.lives]); // [victim, livesRemaining]
+                        // eventLog.push(['respawn', victim.id, victim.lives]); // Old format
+                        eventLog.push(['respawn', victim.id, victim.lives, victim.nickname]);
                     } else {
                         // No lives left
                         victim.hp = 0; // Ensure HP is zero
                         victim.state = DEAD_STATE;
-                        eventLog.push(['kill', attacker.id, victim.id, 'gorilla_damage']);
+                        // eventLog.push(['kill', attacker.id, victim.id, 'gorilla_damage']); // Old format
+                        eventLog.push(['kill', attacker.id, victim.id, 'gorilla_damage', victim.nickname, attacker.nickname]);
                     }
                 }
             }
@@ -121,16 +149,20 @@ class CombatSystem {
                 victim.hp = 0;
                 // Gorilla has 1 life, so hp 0 means death.
                 victim.state = DEAD_STATE;
-                eventLog.push(['hit', attacker.id, victim.id, damageDealt, true]);
-                eventLog.push(['kill', attacker.id, victim.id, 'human_crit']);
+                // eventLog.push(['hit', attacker.id, victim.id, damageDealt, true]); // Old format
+                eventLog.push(['hit', attacker.id, victim.id, damageDealt, true, victim.nickname, attacker.nickname]);
+                // eventLog.push(['kill', attacker.id, victim.id, 'human_crit']); // Old format
+                eventLog.push(['kill', attacker.id, victim.id, 'human_crit', victim.nickname, attacker.nickname]);
             } else {
                 victim.hp -= nonCritDamage;
-                eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false]);
+                // eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false]); // Old format
+                eventLog.push(['hit', attacker.id, victim.id, nonCritDamage, false, victim.nickname, attacker.nickname]);
 
                 if (victim.hp <= 0) {
                     victim.hp = 0; // Ensure HP is zero
                     victim.state = DEAD_STATE;
-                    eventLog.push(['kill', attacker.id, victim.id, 'human_damage']);
+                    // eventLog.push(['kill', attacker.id, victim.id, 'human_damage']); // Old format
+                    eventLog.push(['kill', attacker.id, victim.id, 'human_damage', victim.nickname, attacker.nickname]);
                 }
             }
         }
