@@ -17,10 +17,12 @@
         <ul id="chatMessages"></ul>
         <input type="text" id="chatInput" placeholder="Type message..." />
     </div>
-    <!-- keep the Colyseus CDN bundle as plain <script> because it
-         attaches a global "Colyseus" object -->
-    <script src="https://cdn.jsdelivr.net/npm/colyseus.js@^0.15.0/dist/colyseus.js"></script>
-    <!-- THESE must be modules -->
+    <!-- Colyseus ESM bundle (works in browsers) -->
+    <script type="module">
+      import { Client } from "https://cdn.jsdelivr.net/npm/colyseus.js@0.15.16/dist/colyseus.esm.js";
+      window.ColyseusClient = Client;   // expose for net.js
+    </script>
+    <!-- net.js and game.js are already modules -->
     <script type="module" src="net.js"></script>
     <script type="module" src="game.js"></script>
 </body>

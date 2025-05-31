@@ -214,13 +214,25 @@ function drawMapBackground() {
 
 function drawObstacles() {
     ctx.fillStyle = '#555555'; // Obstacle color
-    gameState.obstacles.forEach(obs => {
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-    });
+    if (gameState.obstacles && gameState.obstacles.length > 0) {
+        gameState.obstacles.forEach(obs => {
+            if (obs && typeof obs.x === 'number' && typeof obs.y === 'number' && typeof obs.width === 'number' && typeof obs.height === 'number') {
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            } else {
+                console.warn("Skipping drawing obstacle due to missing properties:", obs);
+            }
+        });
+    }
 }
 
 function drawPlayer(player) {
-    if (!player || player.state === 'spectating') return; // Don't draw if spectating
+    if (!player || player.state === 'spectating') return;
+
+    // Add guard for essential properties
+    if (typeof player.x !== 'number' || typeof player.y !== 'number' || typeof player.hp !== 'number' || typeof player.maxHp !== 'number') {
+        console.warn("Skipping drawing player due to missing essential properties (x, y, hp, maxHp):", player);
+        return;
+    }
 
     let alpha = 1;
     // Check for fade-in animation
@@ -464,6 +476,21 @@ function processGameEvents() {
 // --- Main Game Loop ---
 function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
+
+    // Prevent game logic and drawing if not connected or in a non-active state
+    if (!gameState.localPlayerId ||
+        gameState.gamePhase === "connecting" ||
+        gameState.gamePhase === "error" ||
+        gameState.gamePhase === "disconnected") {
+        // Still draw a basic screen or message for these states if desired
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.fillText(gameState.gamePhase.toUpperCase() + "...", canvas.width / 2, canvas.height / 2);
+        return;
+    }
 
     updateCamera(); // Update camera based on player position and map size
 
