@@ -1,5 +1,5 @@
 const colyseus = require('colyseus');
-const { Schema, MapSchema, ArraySchema, type } = require('@colyseus/schema');
+const { Schema, MapSchema, ArraySchema, type, defineTypes } = require('@colyseus/schema');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -22,52 +22,105 @@ const BOT_TARGET_TOTAL_HUMANS = 10; // Target total humans (players + bots)
 
 // --- Player State ---
 class Player extends Schema {
-    @type("string") id = "";
-    @type("string") nickname = "Player";
-    @type("string") role = "human"; // "human" or "gorilla"
-    @type("number") x = Math.random() * MAP_WIDTH;
-    @type("number") y = Math.random() * MAP_HEIGHT;
-    @type("number") hp = 10;
-    @type("number") lives = 10;
-    @type("number") st = 50; // Stamina
-    @type("string") state = "playing"; // "playing", "dead", "spectating"
-    @type("boolean") isBot = false;
-    @type("number") lastAttackTime = 0;
-    @type("number") moveSpeed = 5; // Will be set from balance.json
-    @type("number") punchCooldownMs = 400; // Will be set from balance.json
-    @type("number") bodyRadius = 1; // Default, will be set from balance.json
+    constructor() {
+        super();
+        this.id = "";
+        this.nickname = "Player";
+        this.role = "human"; // "human" or "gorilla"
+        this.x = Math.random() * MAP_WIDTH;
+        this.y = Math.random() * MAP_HEIGHT;
+        this.hp = 10;
+        this.lives = 10;
+        this.st = 50; // Stamina
+        this.state = "playing"; // "playing", "dead", "spectating"
+        this.isBot = false;
+        this.lastAttackTime = 0;
+        this.moveSpeed = 5; // Will be set from balance.json
+        this.punchCooldownMs = 400; // Will be set from balance.json
+        this.bodyRadius = 1; // Default, will be set from balance.json
+    }
 }
+defineTypes(Player, {
+    id: "string",
+    nickname: "string",
+    role: "string",
+    x: "number",
+    y: "number",
+    hp: "number",
+    lives: "number",
+    st: "number",
+    state: "string",
+    isBot: "boolean",
+    lastAttackTime: "number",
+    moveSpeed: "number",
+    punchCooldownMs: "number",
+    bodyRadius: "number",
+});
 
 // --- Obstacle State (Simple Example) ---
 class Obstacle extends Schema {
-    @type("number") x = 0;
-    @type("number") y = 0;
-    @type("number") width = 0;
-    @type("number") height = 0;
-    // @type("string") type = "rectangle"; // Could add 'circle' etc.
+    constructor() {
+        super();
+        this.x = 0;
+        this.y = 0;
+        this.width = 0;
+        this.height = 0;
+        // this.type = "rectangle"; // Could add 'circle' etc.
+    }
 }
+defineTypes(Obstacle, {
+    x: "number",
+    y: "number",
+    width: "number",
+    height: "number",
+    // type: "string",
+});
 
 // --- Chat Message State ---
 class ChatMessage extends Schema {
-    @type("string") senderId = "";
-    @type("string") nickname = "";
-    @type("string") message = "";
-    @type("number") timestamp = 0;
+    constructor() {
+        super();
+        this.senderId = "";
+        this.nickname = "";
+        this.message = "";
+        this.timestamp = 0;
+    }
 }
+defineTypes(ChatMessage, {
+    senderId: "string",
+    nickname: "string",
+    message: "string",
+    timestamp: "number",
+});
 
 // --- Game State ---
 class GameState extends Schema {
-    @type("string") gamePhase = "lobby"; // "lobby", "countdown", "round", "results"
-    @type("number") roundTime = 0; // Seconds since round start
-    @type("number") countdown = COUNTDOWN_SECONDS;
-    @type({ map: Player }) players = new MapSchema();
-    @type(["string"]) gorillaQueue = new ArraySchema(); // Stores client.sessionId
-    @type([["string"]]) events = new ArraySchema(); // For broadcasting hit, kill, etc. [type, ...args]
-    @type([Obstacle]) mapObstacles = new ArraySchema();
-    @type([ChatMessage]) chatMessages = new ArraySchema();
-    @type("string") gorillaPlayerId = null; // ID of the current gorilla
-    @type("number") totalHumanLives = 0;
+    constructor() {
+        super();
+        this.gamePhase = "lobby"; // "lobby", "countdown", "round", "results"
+        this.roundTime = 0; // Seconds since round start
+        this.countdown = COUNTDOWN_SECONDS;
+        this.players = new MapSchema();
+        this.gorillaQueue = new ArraySchema(); // Stores client.sessionId
+        this.events = new ArraySchema(); // For broadcasting hit, kill, etc. [type, ...args]
+        this.mapObstacles = new ArraySchema();
+        this.chatMessages = new ArraySchema();
+        this.gorillaPlayerId = null; // ID of the current gorilla
+        this.totalHumanLives = 0;
+    }
 }
+defineTypes(GameState, {
+    gamePhase: "string",
+    roundTime: "number",
+    countdown: "number",
+    players: { map: Player },
+    gorillaQueue: ["string"],
+    events: [["string"]], // Array of Array of strings
+    mapObstacles: [Obstacle],
+    chatMessages: [ChatMessage],
+    gorillaPlayerId: "string",
+    totalHumanLives: "number",
+});
 
 class MatchRoom extends colyseus.Room {
     onCreate(options) {
