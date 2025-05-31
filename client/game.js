@@ -1,5 +1,4 @@
 import { gameState, dequeueEvents, sendInput, sendChatMessage } from "./net.js";
-import { gameState, sendInput as sendNetInput, sendChatMessage as sendNetChatMessage, dequeueEvents } from './net.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
