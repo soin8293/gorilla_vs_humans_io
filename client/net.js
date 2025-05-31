@@ -1,4 +1,5 @@
-const client = new Colyseus.Client("wss://orange-leaf-1234.ngrok.io"); // Use window.location for flexible deployment
+// net.js (ES module)
+const client = new window.ColyseusClient("wss://gorilla-vs-humans-io.onrender.com");
 window.colyseusRoom = null; // Expose room globally for game.js to send inputs
 
 // gameState will be populated by server updates and consumed by game.js
