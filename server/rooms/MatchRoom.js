@@ -36,8 +36,10 @@ class Player extends Schema {
         this.x = Math.random() * MAP_WIDTH;
         this.y = Math.random() * MAP_HEIGHT;
         this.hp = 10;
+        this.maxHp = 10; // Add maxHp to schema
         this.lives = 10;
         this.st = 50; // Stamina
+        this.maxStamina = 50; // Add maxStamina to schema
         this.state = "playing"; // "playing", "dead", "spectating"
         this.isBot = false;
         this.lastAttackTime = 0;
@@ -53,8 +55,10 @@ defineTypes(Player, {
     x: "number",
     y: "number",
     hp: "number",
+    maxHp: "number", // Define maxHp type
     lives: "number",
     st: "number",
+    maxStamina: "number", // Define maxStamina type
     state: "string",
     isBot: "boolean",
     lastAttackTime: "number",
@@ -487,8 +491,10 @@ class MatchRoom extends colyseus.Room {
             return;
         }
         player.hp = config.health;
+        player.maxHp = config.health; // Set maxHp from balance
         player.lives = config.lives;
         player.st = config.stamina;
+        player.maxStamina = config.stamina; // Set maxStamina from balance
         player.moveSpeed = config.move_speed;
         player.punchCooldownMs = config.punch_cooldown_ms;
         player.bodyRadius = config.body_radius;
