@@ -61,7 +61,7 @@ function getPlayerNickname() {
 async function connect() {
     try {
         const nickname = getPlayerNickname();
-        const room = await client.joinOrCreate("MatchRoom", { nickname: nickname });
+        const room = await client.joinOrCreate("game_room", { nickname: nickname });
         window.colyseusRoom = room;
         gameState.localPlayerId = room.sessionId;
         console.log("Joined successfully!", room.sessionId, room.name);
